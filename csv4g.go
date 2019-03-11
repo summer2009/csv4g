@@ -1,12 +1,16 @@
 package csv4g
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"reflect"
 	"strings"
+
+	"github.com/dimchansky/utfbom"
 )
 
 type FieldDefine struct {
@@ -27,6 +31,29 @@ type Option struct {
 	Comma      rune
 	LazyQuotes bool
 	SkipLine   int
+}
+
+func trySkip(byteData []byte) ([]byte, error) {
+	fmt.Println("Input:", byteData)
+
+	// just skip BOM
+	output, err := ioutil.ReadAll(utfbom.SkipOnly(bytes.NewReader(byteData)))
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("ReadAll with BOM skipping", output)
+
+	// skip BOM and detect encoding
+	sr, enc := utfbom.Skip(bytes.NewReader(byteData))
+	fmt.Printf("Detected encoding: %s\n", enc)
+	output, err = ioutil.ReadAll(sr)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	fmt.Println("ReadAll with BOM detection and skipping", output)
+	fmt.Println()
+	return output, nil
 }
 
 func Comma(r rune) func(*Option)      { return func(opt *Option) { opt.Comma = r } }
@@ -72,6 +99,7 @@ Out:
 	for i := 0; i < tType.NumField(); i++ {
 		f := tType.Field(i)
 		tagStr := f.Tag.Get("csv")
+
 		fieldName := f.Name
 		canSkip := false
 		if tagStr != "" {
@@ -136,6 +164,8 @@ func NewWithOpts(filePath string, o interface{}, options ...func(*Option)) (*Csv
 	var err error
 	var fields []string
 	fields, err = r.Read() // first line is field's description
+	tmp, _ := trySkip([]byte(fields[0]))
+	fields[0] = string(tmp)
 	if err != nil {
 		return nil, fmt.Errorf("%s read first line error %v", file.Name(), err)
 	}
@@ -232,11 +262,11 @@ func (this *Csv4g) Parse(obj interface{}) (err error) {
 				if sliceConv, ok := sliceConvertes[f.Type()]; ok {
 					f.Set(sliceConv(strings.Split(value, "|")))
 				} else {
-					err = fmt.Errorf("%s:[%d] unsupported field set %v -> %v :[%d].",
+					err = fmt.Errorf("%s:[%d] unsupported field set -> %v :[%s].",
 						this.name, this.lineNo+this.lineOffset, this.fields[index], value)
 				}
 			} else {
-				err = fmt.Errorf("%s:[%d] unsupported field set %v -> %v :[%d].",
+				err = fmt.Errorf("%s:[%d] unsupported field set -> %v :[%s].",
 					this.name, this.lineNo+this.lineOffset, this.fields[index], value)
 			}
 		}
