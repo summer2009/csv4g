@@ -1,3 +1,5 @@
+summer2009 add remove bom for some csv files,also work properly with csv without bom head.
+
 csv4g
 =======
 
